@@ -32,6 +32,20 @@ class Player(Enum):
             return Player.Defender
         else:
             return Player.Attacker
+        
+class Direction(Enum):
+    """Every direction a unit can move"""
+    Up = 0
+    Right = 1
+    Down = 2
+    Left = 3
+
+class ActionType(Enum):
+    """Every action a unit can take"""
+    SelfDestruct = 0
+    Move = 1
+    Attack = 2
+    Repair = 3
 
 class GameType(Enum):
     AttackerVsDefender = 0
@@ -75,6 +89,11 @@ class Unit:
         elif self.health > 9:
             self.health = 9
 
+    def has_full_health(self) -> bool:
+        if self.health == 9:
+            return True
+        return False
+
     def to_string(self) -> str:
         """Text representation of this unit."""
         p = self.player.name.lower()[0]
@@ -98,6 +117,28 @@ class Unit:
         if target.health + amount > 9:
             return 9 - target.health
         return amount
+    
+    def is_valid_movement(self, player: Player, direction: Direction) -> bool:
+        # Attacker units except Virus can move up or left. Virus moves in any direction
+        if player == Player.Attacker:
+            if self.type == UnitType.AI or self.type == UnitType.Program or self.type == UnitType.Firewall:
+                if direction == Direction.Up or direction == Direction.Left:
+                    return True
+                return False
+
+            if self.type == UnitType.Virus:
+                return True
+            
+        # Defender units except Tech can move down or right. Tech moves in any direction
+        if player == Player.Defender:
+            if self.type == UnitType.AI or self.type == UnitType.Program or self.type == UnitType.Firewall:
+                if direction == Direction.Down or direction == Direction.Right:
+                    return True
+                return False
+
+            if self.type == UnitType.Tech:
+                return True
+
 
 ##############################################################################################################
 
@@ -146,6 +187,11 @@ class Coord:
         yield Coord(self.row+1,self.col)
         yield Coord(self.row,self.col+1)
 
+    def equals(self, target: Coord) -> bool:
+        if (self.row == target.row and self.col == target.col):
+            return True
+        return False
+
     @classmethod
     def from_string(cls, s : str) -> Coord | None:
         """Create a Coord from a string. ex: D2."""
@@ -185,6 +231,33 @@ class CoordPair:
         for row in range(self.src.row,self.dst.row+1):
             for col in range(self.src.col,self.dst.col+1):
                 yield Coord(row,col)
+
+    def is_adjacent(self) -> bool:
+        for adj_coord in self.src.iter_adjacent():
+            if adj_coord.col == self.dst.col and adj_coord.row == self.dst.row:
+                return True
+        
+        return False
+    
+    def are_coords_equal(self) -> bool:
+        if self.src.equals(self.dst):
+            return True
+        return False
+    
+    def get_direction(self) -> Direction:
+        srcRow = self.src.row
+        srcCol = self.src.col
+        dstRow = self.dst.row
+        dstCol = self.dst.col
+
+        if srcRow < dstRow and srcCol == dstCol:
+            return Direction.Down
+        if srcRow > dstRow and srcCol == dstCol:
+            return Direction.Up
+        if srcRow == dstRow and srcCol < dstCol:
+            return Direction.Right
+        if srcRow == dstRow and srcCol > dstCol:
+            return Direction.Left
 
     @classmethod
     def from_quad(cls, row0: int, col0: int, row1: int, col1: int) -> CoordPair:
@@ -309,23 +382,115 @@ class Game:
             target.mod_health(health_delta)
             self.remove_dead(coord)
 
-    def is_valid_move(self, coords : CoordPair) -> bool:
-        """Validate a move expressed as a CoordPair. TODO: WRITE MISSING CODE!!!"""
+    def perform_self_distruct(self, src: Coord):
+        """Iterate over surrounding squares and damage units therein, then delete selected unit"""
+        # Damage surroundings
+        for dst in src.iter_range(1):
+            if src.equals(dst):
+                continue
+            self.mod_health(dst, -2)
+        
+        # Delete self
+        src_unit = self.get(src)
+        self.mod_health(src, -src_unit.health)
+
+    def perform_fight(self, coords : CoordPair):
+        """Combat is bidirectional and damage is dealt even if unit dies, so extract damage values first"""
+        src_unit = self.get(coords.src)
+        dst_unit = self.get(coords.dst)
+        damage_to_dst = src_unit.damage_amount(dst_unit)
+        damage_to_src = dst_unit.damage_amount(src_unit)
+
+        self.mod_health(coords.src, -damage_to_src)
+        self.mod_health(coords.dst, -damage_to_dst)
+
+    def perform_repair(self, coords: CoordPair):
+        """Repair value is retrieved from Unit class"""
+        src_unit = self.get(coords.src)
+        dst_unit = self.get(coords.dst)
+        repair_to_dst = src_unit.repair_amount(dst_unit)
+
+        self.mod_health(coords.dst, repair_to_dst)
+
+    # Unit is engaged in combat if there is at least 1 enemy unit adjacent
+    def is_engaged_in_combat(self, src : Coord) -> bool:
+        if self.next_player == Player.Attacker:
+            enemy = Player.Defender
+        else:
+            enemy = Player.Attacker
+
+        for adj in src.iter_adjacent():
+            dst_unit = self.get(adj)
+            if dst_unit is not None and dst_unit.player == enemy:
+                return True
+            
+        return False
+    
+    # Check move validity based on player and unit type
+    def is_movement_direction_valid(self, unit: Unit, coords: CoordPair) -> bool:
+        movementDirection = coords.get_direction()
+        return unit.is_valid_movement(self.next_player, movementDirection)
+
+    def is_valid_move(self, coords : CoordPair) -> Tuple[bool, ActionType]:
+        """Validate a move expressed as a CoordPair."""
+        # Check if coords are in-bounds
         if not self.is_valid_coord(coords.src) or not self.is_valid_coord(coords.dst):
-            return False
-        unit = self.get(coords.src)
-        if unit is None or unit.player != self.next_player:
-            return False
-        unit = self.get(coords.dst)
-        return (unit is None)
+            return (False, None)
+        
+        # Check if src coord is player unit
+        src_unit = self.get(coords.src)
+        if src_unit is None or src_unit.player != self.next_player:
+            return (False, None)
+        
+        # If dst is same as source, return true (this is the self destruct)
+        if coords.are_coords_equal():
+            return (True, ActionType.SelfDestruct)
+        
+        # src and dst are not the same. Check if dst coord is adjacent to src coord
+        if not coords.is_adjacent():
+            return (False, None)
+        
+        # We've checked spaces are not equal, adjacent, in-bounds, and player unit is chosen.
+        # Now there's 3 possibilities: dst is empty, 
+        # dst is occupied by friendly unit, or dst is occupied by enemy unit
+
+        # If dst is empty space, check if no enemies are adjacent (unless unit is tech or virus), then check if movement is valid
+        dst_unit = self.get(coords.dst)
+        if (dst_unit is None):
+            engaged = self.is_engaged_in_combat(coords.src)
+            if engaged and src_unit.type is not UnitType.Tech and src_unit.type is not UnitType.Virus:
+                return (False, None)
+            if not self.is_movement_direction_valid(src_unit, coords):
+                return (False, None)
+            return (True, ActionType.Move)
+    
+        # If dst is friendly square, check if src unit is Tech (this is the repair)
+        # then make sure target is not a virus or already at full health
+        if dst_unit.player == self.next_player:
+            if src_unit.type == UnitType.Tech:
+                if dst_unit.type != UnitType.Virus and not dst_unit.has_full_health():
+                    return (True, ActionType.Repair)
+            return (False, None)
+
+        # If dst is enemy square, return true (this is the attack)
+        if dst_unit.player != self.next_player:
+            return (True, ActionType.Attack)
 
     def perform_move(self, coords : CoordPair) -> Tuple[bool,str]:
-        """Validate and perform a move expressed as a CoordPair. TODO: WRITE MISSING CODE!!!"""
-        if self.is_valid_move(coords):
-            self.set(coords.dst,self.get(coords.src))
-            self.set(coords.src,None)
+        """Validate and perform a move expressed as a CoordPair."""
+        is_valid, action_type = self.is_valid_move(coords)
+        if is_valid:
+            if action_type == ActionType.SelfDestruct:
+                self.perform_self_distruct(coords.src)
+            elif action_type == ActionType.Move:
+                self.set(coords.dst,self.get(coords.src))
+                self.set(coords.src,None)
+            elif action_type == ActionType.Attack:
+                self.perform_fight(coords)
+            elif action_type == ActionType.Repair:
+                self.perform_repair(coords)
             return (True,"")
-        return (False,"invalid move")
+        return (False,"invalid move")        
 
     def next_turn(self):
         """Transitions game to the next turn."""
@@ -439,6 +604,8 @@ class Game:
                 return Player.Attacker    
         elif self._defender_has_ai:
             return Player.Defender
+        else:
+            return Player.Defender # Undefined behaviour when both AIs are dead. Award win to defender.
 
     def move_candidates(self) -> Iterable[CoordPair]:
         """Generate valid move candidates for the next player."""
