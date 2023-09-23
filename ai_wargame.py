@@ -608,7 +608,7 @@ class Game:
                     if success:
                         output_file_data = {
                             "Player Name": f"Broker {self.next_player.name}",
-                            "Turns played": self.turns_played,
+                            "Turn Number": self.turns_played + 1,
                             "Action Taken": self.generate_action_description(mv, action_type),
                             "Current Board": f"\n{self.print_board()}"
                         }
@@ -627,7 +627,7 @@ class Game:
 
                     output_file_data = {
                         "Player Name": self.next_player.name,
-                        "Turns played": self.turns_played,
+                        "Turn Number": self.turns_played + 1,
                         "Action Taken": self.generate_action_description(mv, action_type),
                         "Current Board": f"\n{self.print_board()}"
                     }
@@ -643,7 +643,7 @@ class Game:
         
         output_file_data = {
             "Player Name": self.next_player.name,
-            "Turns played": self.turns_played,
+            "Turn Number": self.turns_played + 1,
         }
         mv = self.suggest_move(output_file_data)
         if mv is not None:
