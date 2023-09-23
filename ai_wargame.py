@@ -338,7 +338,7 @@ class Game:
     def __post_init__(self):
         """Automatically called after class init to set up the default board state."""
         dim = self.options.dim
-        self.file_name = f"gameTrace-{self.options.alpha_beta}-{self.options.max_time}-{self.options.max_turns}.txt"
+        self.file_name = f"gameTrace-{str(self.options.alpha_beta).lower()}-{self.options.max_time}-{self.options.max_turns}.txt"
         self.board = [[None for _ in range(dim)] for _ in range(dim)]
         md = dim-1
         self.set(Coord(0,0),Unit(player=Player.Defender,type=UnitType.AI))
