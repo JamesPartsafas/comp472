@@ -708,6 +708,74 @@ def main():
     parser.add_argument('--broker', type=str, help='play via a game broker')
     args = parser.parse_args()
 
+
+
+    #Intro to AI Wargame
+    print("Welcome to the AI Wargame!")
+    
+    while True:
+        #Check to see if user would like default settings for the game or customize their own settings
+        rules = input("Would you like to use the default or custom settings for the game setup? (d|c): ")
+        if rules is not None and (rules == 'c' or rules == 'd') :
+
+            #default rules have been chosen, will create the game with all default values
+            if rules == 'd':
+                print("We will setup the game with default settings! GLHF!")
+                break    
+
+            #custom rules have been chosen, user will chose their values
+            elif rules == 'c':
+                print("Custom rules!")
+                
+                #choosing game type
+                while True:
+                    gtype = input("Please enter the game type (auto|attacker|defender|manual): ")
+                    if gtype is not None and (gtype == 'auto' or gtype == 'attacker' or gtype == 'defender' or gtype == 'manual' ):
+
+                        #after check if game type is of proper format. it is parsed using the argument parser and stored
+                        args.game_type = gtype
+
+                        #if there are AI in the game (any game type other than manual)
+                        if gtype != 'manual':
+                            
+                            #choosing max Depth for AI
+                            while True :
+                                mdepth = input("Please enter the max search depth for the Computer opponent (positive Integer greater than 1): ") 
+                                if mdepth is not None and mdepth.isnumeric() and mdepth > 1:
+                                    args.max_depth = mdepth
+                                    break
+                                else:
+                                    print("Invalid entry for max search depth") #search Depth invalid
+                            
+                            #choosing max search Time for AI
+                            while True :
+                                mtime = input("Please enter the max time allowed for AI to search for next move (Positive integer greater than 0): ")
+                                if mtime is not None and mtime.isnumeric() and mtime > 0:
+                                    args.max_time = mtime
+                                    break
+                                else:
+                                    print("Invalid entry for max search time") #search Time invalid
+                            
+                            break
+
+                        ##FOR THE BROKER: not sure what to check for here as the url entry. kept pretty simple. 
+                        ##regardless of whats entered, change value of broker null
+
+                        #choosing broker URL
+                        while True :
+                            broker = input("Please enter the broker URL: ")
+                            if broker is not None:
+                                args.broker = None
+                                break
+                            else:
+                                args.broker = None
+                        break
+                    else :
+                        print("Invalid entry for Game Type. Please try again.") #game type invalid.
+            break
+        else :
+            print("Invalid entry for game setup please try again.") #default or custom settings choice is invalid.
+
     # parse the game type
     if args.game_type == "attacker":
         game_type = GameType.AttackerVsComp
@@ -728,7 +796,7 @@ def main():
         options.max_time = args.max_time
     if args.broker is not None:
         options.broker = args.broker
-
+    
     # create a new game
     game = Game(options=options)
 
