@@ -53,6 +53,18 @@ class GameType(Enum):
     CompVsDefender = 2
     CompVsComp = 3
 
+class GameTypeConverter:
+    @staticmethod
+    def convert_game_type(game_type):
+        game_type_mapping = {
+            GameType.AttackerVsDefender: "Player 1 = H, Player 2 = H",
+            GameType.AttackerVsComp: "Player 1 = H, Player 2 = AI",
+            GameType.CompVsDefender: "Player 1 = AI, Player 2 = H",
+            GameType.CompVsComp: "Player 1 = AI, Player 2 = AI",
+        }
+
+        return game_type_mapping.get(game_type, "Unknown Game Type")
+
 ##############################################################################################################
 
 @dataclass(slots=True)
@@ -299,6 +311,7 @@ class Options:
     max_turns : int | None = 100
     randomize_moves : bool = True
     broker : str | None = None
+    heuristic : str | None = None
 
 ##############################################################################################################
 
@@ -320,10 +333,12 @@ class Game:
     stats: Stats = field(default_factory=Stats)
     _attacker_has_ai : bool = True
     _defender_has_ai : bool = True
+    file_name : str = ""
 
     def __post_init__(self):
         """Automatically called after class init to set up the default board state."""
         dim = self.options.dim
+        self.file_name = f"gameTrace-{self.options.alpha_beta}-{self.options.max_time}-{self.options.max_turns}.txt"
         self.board = [[None for _ in range(dim)] for _ in range(dim)]
         md = dim-1
         self.set(Coord(0,0),Unit(player=Player.Defender,type=UnitType.AI))
@@ -338,6 +353,27 @@ class Game:
         self.set(Coord(md-2,md),Unit(player=Player.Attacker,type=UnitType.Program))
         self.set(Coord(md,md-2),Unit(player=Player.Attacker,type=UnitType.Program))
         self.set(Coord(md-1,md-1),Unit(player=Player.Attacker,type=UnitType.Firewall))
+
+        output_file_data = {
+            "Section": "Game Parameters",
+            "Timeout Value (seconds)": self.options.max_time,
+            "Max Numbers of Turns": self.options.max_turns,
+            "Play Modes": GameTypeConverter.convert_game_type(self.options.game_type)
+        }
+
+        if self.options.game_type != GameType.AttackerVsDefender:
+            output_file_data["Alpha-Beta"] = "on" if self.options.alpha_beta else "off"
+            output_file_data["Heuristic"] = self.options.heuristic
+        
+        output_file_data["Initial Board"] = f"\n{self.print_board()}"
+        self.dump_to_output_file(output_file_data, append=False)
+
+    def dump_to_output_file(self, output_file_data: dict[str, str], append: bool = True):
+        mode = "a" if append else "w"
+        with open(self.file_name, mode) as f:
+            for key, value in output_file_data.items():
+                f.write(f"{key}: {value}\n")
+            f.write(f"{'=' * 60}\n")
 
     def clone(self) -> Game:
         """Make a new copy of a game for minimax recursion.
@@ -476,7 +512,7 @@ class Game:
         if dst_unit.player != self.next_player:
             return (True, ActionType.Attack)
 
-    def perform_move(self, coords : CoordPair) -> Tuple[bool,str]:
+    def perform_move(self, coords : CoordPair) -> Tuple[bool, ActionType, str]:
         """Validate and perform a move expressed as a CoordPair."""
         is_valid, action_type = self.is_valid_move(coords)
         if is_valid:
@@ -489,22 +525,28 @@ class Game:
                 self.perform_fight(coords)
             elif action_type == ActionType.Repair:
                 self.perform_repair(coords)
-            return (True,"")
-        return (False,"invalid move")        
+            return (True, action_type,"")
+        return (False, None, "invalid move")        
 
     def next_turn(self):
         """Transitions game to the next turn."""
         self.next_player = self.next_player.next()
         self.turns_played += 1
 
-    def to_string(self) -> str:
-        """Pretty text representation of the game."""
+    def generate_action_description(self, coords: CoordPair, action_type: ActionType) -> str:
+        if action_type is ActionType.Move:
+            return f"Move from {coords.src} to {coords.dst}"
+        elif action_type is ActionType.Attack:
+            return f"Attack by {coords.src} to {coords.dst}"
+        elif action_type is ActionType.Repair:
+            return f"Repair by {coords.src} to {coords.dst}"
+        else:
+            return f"Self Destruct at {coords.src}"
+
+    def print_board(self) -> str:
         dim = self.options.dim
-        output = ""
-        output += f"Next player: {self.next_player.name}\n"
-        output += f"Turns played: {self.turns_played}\n"
         coord = Coord()
-        output += "\n   "
+        output = "\n   "
         for col in range(dim):
             coord.col = col
             label = coord.col_string()
@@ -522,6 +564,14 @@ class Game:
                 else:
                     output += f"{str(unit):^3} "
             output += "\n"
+        return output
+
+    def to_string(self) -> str:
+        """Pretty text representation of the game."""
+        output = ""
+        output += f"Next player: {self.next_player.name}\n"
+        output += f"Turns played: {self.turns_played}\n"
+        output += self.print_board()
         return output
 
     def __str__(self) -> str:
@@ -552,20 +602,37 @@ class Game:
             while True:
                 mv = self.get_move_from_broker()
                 if mv is not None:
-                    (success,result) = self.perform_move(mv)
+                    (success, action_type, result) = self.perform_move(mv)
                     print(f"Broker {self.next_player.name}: ",end='')
                     print(result)
                     if success:
+                        output_file_data = {
+                            "Player Name": f"Broker {self.next_player.name}",
+                            "Turns played": self.turns_played,
+                            "Action Taken": self.generate_action_description(mv, action_type),
+                            "Current Board": f"\n{self.print_board()}"
+                        }
+
+                        self.dump_to_output_file(output_file_data)
                         self.next_turn()
                         break
                 sleep(0.1)
         else:
             while True:
                 mv = self.read_move()
-                (success,result) = self.perform_move(mv)
+                (success, action_type, result) = self.perform_move(mv)
                 if success:
                     print(f"Player {self.next_player.name}: ",end='')
                     print(result)
+
+                    output_file_data = {
+                        "Player Name": self.next_player.name,
+                        "Turns played": self.turns_played,
+                        "Action Taken": self.generate_action_description(mv, action_type),
+                        "Current Board": f"\n{self.print_board()}"
+                    }
+
+                    self.dump_to_output_file(output_file_data)
                     self.next_turn()
                     break
                 else:
@@ -573,12 +640,22 @@ class Game:
 
     def computer_turn(self) -> CoordPair | None:
         """Computer plays a move."""
-        mv = self.suggest_move()
+        
+        output_file_data = {
+            "Player Name": self.next_player.name,
+            "Turns played": self.turns_played,
+        }
+        mv = self.suggest_move(output_file_data)
         if mv is not None:
-            (success,result) = self.perform_move(mv)
+            (success, action_type, result) = self.perform_move(mv)
             if success:
                 print(f"Computer {self.next_player.name}: ",end='')
                 print(result)
+
+                output_file_data["Action Taken"] = self.generate_action_description(mv, action_type)
+                output_file_data["Current Board"] = f"\n{self.print_board()}"
+
+                self.dump_to_output_file(output_file_data)
                 self.next_turn()
         return mv
 
@@ -596,15 +673,19 @@ class Game:
     def has_winner(self) -> Player | None:
         """Check if the game is over and returns winner"""
         if self.options.max_turns is not None and self.turns_played >= self.options.max_turns:
+            self.dump_to_output_file({"Winner": f"Defender in {self.turns_played} turns"})
             return Player.Defender
         elif self._attacker_has_ai:
             if self._defender_has_ai:
                 return None
             else:
+                self.dump_to_output_file({"Winner": f"Attacker in {self.turns_played} turns"})
                 return Player.Attacker    
         elif self._defender_has_ai:
+            self.dump_to_output_file({"Winner": f"Defender in {self.turns_played} turns"})
             return Player.Defender
         else:
+            self.dump_to_output_file({"Winner": f"Defender in {self.turns_played} turns"})
             return Player.Defender # Undefined behaviour when both AIs are dead. Award win to defender.
 
     def move_candidates(self) -> Iterable[CoordPair]:
@@ -628,7 +709,7 @@ class Game:
         else:
             return (0, None, 0)
 
-    def suggest_move(self) -> CoordPair | None:
+    def suggest_move(self, output_file_data: dict[str, str]) -> CoordPair | None:
         """Suggest the next move using minimax alpha beta. TODO: REPLACE RANDOM_MOVE WITH PROPER GAME LOGIC!!!"""
         start_time = datetime.now()
         (score, move, avg_depth) = self.random_move()
@@ -644,6 +725,14 @@ class Game:
         if self.stats.total_seconds > 0:
             print(f"Eval perf.: {total_evals/self.stats.total_seconds/1000:0.1f}k/s")
         print(f"Elapsed time: {elapsed_seconds:0.1f}s")
+
+        output_file_data["Time this action (seconds)"] = f"{elapsed_seconds:0.1f}"
+        output_file_data["Heuristic score"] = score
+        output_file_data["Cumulative evals"] = "undefined"
+        output_file_data["Cumulative evals by depth"] = "undefined"
+        output_file_data["Cumulative % evals by depth"] = "undefined"
+        output_file_data["Average Branching factor"] = "undefined"
+
         return move
 
     def post_move_to_broker(self, move: CoordPair):
@@ -706,6 +795,7 @@ def main():
     parser.add_argument('--max_time', type=float, help='maximum search time')
     parser.add_argument('--game_type', type=str, default="manual", help='game type: auto|attacker|defender|manual')
     parser.add_argument('--broker', type=str, help='play via a game broker')
+    parser.add_argument('--heuristic', type=str, default="e0", help='heuristic type: e0|e1|e2')
     args = parser.parse_args()
 
     # parse the game type
@@ -728,6 +818,8 @@ def main():
         options.max_time = args.max_time
     if args.broker is not None:
         options.broker = args.broker
+    if args.heuristic is not None and game_type != GameType.AttackerVsDefender:
+        options.heuristic = args.heuristic
 
     # create a new game
     game = Game(options=options)
