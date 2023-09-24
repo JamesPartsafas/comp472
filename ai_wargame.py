@@ -798,6 +798,8 @@ def main():
     parser.add_argument('--game_type', type=str, default="manual", help='game type: auto|attacker|defender|manual')
     parser.add_argument('--broker', type=str, help='play via a game broker')
     parser.add_argument('--heuristic', type=str, default="e0", help='heuristic type: e0|e1|e2')
+    parser.add_argument('--alpha_beta', default=True, type=lambda x: (str(x).lower() == 'true'), help='Use alpha beta: True|False')
+    parser.add_argument('--max_turns', type=int, default="100", help='Max number of turns')
     args = parser.parse_args()
 
 
@@ -841,8 +843,8 @@ def main():
                             
                             #choosing max search Time for AI
                             while True :
-                                mtime = input("Please enter the max time allowed for AI to search for next move (Positive integer greater than 0): ")
-                                if mtime is not None and mtime.isnumeric() and int(mtime) > 0:
+                                mtime = input("Please enter the max time allowed for AI to search for next move (Positive number greater than 0): ")
+                                if mtime is not None and float(mtime) > 0:
                                     args.max_time = mtime
                                     break
                                 else:
@@ -853,10 +855,14 @@ def main():
 
                         #choosing broker URL
                         while True :
-                            broker = input("Please enter the broker URL: ")
-                            if broker is not None and validators.url(broker):
-                                args.broker = None
-                                break
+                            broker = input("Please enter the broker URL, or enter null for no broker: ")
+                            if broker is not None:
+                                if broker == "null":
+                                    args.broker = None
+                                    break
+                                if validators.url(broker):
+                                    args.broker = broker
+                                    break
                             else:
                                 print("This is an invalid URL for the broker.")
                         break
@@ -886,9 +892,12 @@ def main():
         options.max_time = args.max_time
     if args.broker is not None:
         options.broker = args.broker
-    
     if args.heuristic is not None and game_type != GameType.AttackerVsDefender:
         options.heuristic = args.heuristic
+    if args.alpha_beta is not None:
+        options.alpha_beta = args.alpha_beta
+    if args.max_turns is not None:
+        options.max_turns = args.max_turns
 
     # create a new game
     game = Game(options=options)
