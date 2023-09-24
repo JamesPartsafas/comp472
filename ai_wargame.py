@@ -8,6 +8,8 @@ from time import sleep
 from typing import Tuple, TypeVar, Type, Iterable, ClassVar
 import random
 import requests
+import validators
+
 
 # maximum and minimum values for our heuristic scores (usually represents an end of game condition)
 MAX_HEURISTIC_SCORE = 2000000000
@@ -720,7 +722,7 @@ def main():
 
             #default rules have been chosen, will create the game with all default values
             if rules == 'd':
-                print("We will setup the game with default settings! GLHF!")
+                print("\nWe will setup the game with default settings! GLHF!")
                 break    
 
             #custom rules have been chosen, user will chose their values
@@ -741,7 +743,7 @@ def main():
                             #choosing max Depth for AI
                             while True :
                                 mdepth = input("Please enter the max search depth for the Computer opponent (positive Integer greater than 1): ") 
-                                if mdepth is not None and mdepth.isnumeric() and mdepth > 1:
+                                if mdepth is not None and mdepth.isnumeric() and int(mdepth) > 1:
                                     args.max_depth = mdepth
                                     break
                                 else:
@@ -750,25 +752,23 @@ def main():
                             #choosing max search Time for AI
                             while True :
                                 mtime = input("Please enter the max time allowed for AI to search for next move (Positive integer greater than 0): ")
-                                if mtime is not None and mtime.isnumeric() and mtime > 0:
+                                if mtime is not None and mtime.isnumeric() and int(mtime) > 0:
                                     args.max_time = mtime
                                     break
                                 else:
-                                    print("Invalid entry for max search time") #search Time invalid
-                            
-                            break
+                                    print("Invalid entry for max search time") #search Time invalid                                    
 
                         ##FOR THE BROKER: not sure what to check for here as the url entry. kept pretty simple. 
-                        ##regardless of whats entered, change value of broker null
+                        ## used validators to check if entry is indeed a URL. regardless of what the URL points to
 
                         #choosing broker URL
                         while True :
                             broker = input("Please enter the broker URL: ")
-                            if broker is not None:
+                            if broker is not None and validators.url(broker):
                                 args.broker = None
                                 break
                             else:
-                                args.broker = None
+                                print("This is an invalid URL for the broker.")
                         break
                     else :
                         print("Invalid entry for Game Type. Please try again.") #game type invalid.
