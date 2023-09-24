@@ -8,6 +8,8 @@ from time import sleep
 from typing import Tuple, TypeVar, Type, Iterable, ClassVar
 import random
 import requests
+import validators
+
 
 # maximum and minimum values for our heuristic scores (usually represents an end of game condition)
 MAX_HEURISTIC_SCORE = 2000000000
@@ -796,7 +798,79 @@ def main():
     parser.add_argument('--game_type', type=str, default="manual", help='game type: auto|attacker|defender|manual')
     parser.add_argument('--broker', type=str, help='play via a game broker')
     parser.add_argument('--heuristic', type=str, default="e0", help='heuristic type: e0|e1|e2')
+    parser.add_argument('--alpha_beta', default=True, type=lambda x: (str(x).lower() == 'true'), help='Use alpha beta: True|False')
+    parser.add_argument('--max_turns', type=int, default="100", help='Max number of turns')
     args = parser.parse_args()
+
+
+
+    #Intro to AI Wargame
+    print("Welcome to the AI Wargame!")
+    
+    while True:
+        #Check to see if user would like default settings for the game or customize their own settings
+        rules = input("Would you like to use the default or custom settings for the game setup? (d|c): ")
+        if rules is not None and (rules == 'c' or rules == 'd') :
+
+            #default rules have been chosen, will create the game with all default values
+            if rules == 'd':
+                print("\nWe will setup the game with default settings! GLHF!")
+                break    
+
+            #custom rules have been chosen, user will chose their values
+            elif rules == 'c':
+                print("Custom rules!")
+                
+                #choosing game type
+                while True:
+                    gtype = input("Please enter the game type (auto|attacker|defender|manual): ")
+                    if gtype is not None and (gtype == 'auto' or gtype == 'attacker' or gtype == 'defender' or gtype == 'manual' ):
+
+                        #after check if game type is of proper format. it is parsed using the argument parser and stored
+                        args.game_type = gtype
+
+                        #if there are AI in the game (any game type other than manual)
+                        if gtype != 'manual':
+                            
+                            #choosing max Depth for AI
+                            while True :
+                                mdepth = input("Please enter the max search depth for the Computer opponent (positive Integer greater than 1): ") 
+                                if mdepth is not None and mdepth.isnumeric() and int(mdepth) > 1:
+                                    args.max_depth = mdepth
+                                    break
+                                else:
+                                    print("Invalid entry for max search depth") #search Depth invalid
+                            
+                            #choosing max search Time for AI
+                            while True :
+                                mtime = input("Please enter the max time allowed for AI to search for next move (Positive number greater than 0): ")
+                                if mtime is not None and float(mtime) > 0:
+                                    args.max_time = mtime
+                                    break
+                                else:
+                                    print("Invalid entry for max search time") #search Time invalid                                    
+
+                        ##FOR THE BROKER: not sure what to check for here as the url entry. kept pretty simple. 
+                        ## used validators to check if entry is indeed a URL. regardless of what the URL points to
+
+                        #choosing broker URL
+                        while True :
+                            broker = input("Please enter the broker URL, or enter null for no broker: ")
+                            if broker is not None:
+                                if broker == "null":
+                                    args.broker = None
+                                    break
+                                if validators.url(broker):
+                                    args.broker = broker
+                                    break
+                            else:
+                                print("This is an invalid URL for the broker.")
+                        break
+                    else :
+                        print("Invalid entry for Game Type. Please try again.") #game type invalid.
+            break
+        else :
+            print("Invalid entry for game setup please try again.") #default or custom settings choice is invalid.
 
     # parse the game type
     if args.game_type == "attacker":
@@ -820,6 +894,10 @@ def main():
         options.broker = args.broker
     if args.heuristic is not None and game_type != GameType.AttackerVsDefender:
         options.heuristic = args.heuristic
+    if args.alpha_beta is not None:
+        options.alpha_beta = args.alpha_beta
+    if args.max_turns is not None:
+        options.max_turns = args.max_turns
 
     # create a new game
     game = Game(options=options)
