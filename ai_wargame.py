@@ -829,6 +829,16 @@ def main():
                         #after check if game type is of proper format. it is parsed using the argument parser and stored
                         args.game_type = gtype
 
+                        #max number of turns
+                        while True:
+                            maxTurn = input("Please input the max number of turns you would like the game to run (postive integer):")
+                            if maxTurn is not None and maxTurn.isnumeric() and int(maxTurn)>0:
+                                args.max_turns = int(maxTurn)
+                                break
+                            else:
+                                print("Invalid value for number of turns entered.")                            
+                        
+                        
                         #if there are AI in the game (any game type other than manual)
                         if gtype != 'manual':
                             
@@ -844,11 +854,16 @@ def main():
                             #choosing max search Time for AI
                             while True :
                                 mtime = input("Please enter the max time allowed for AI to search for next move (Positive number greater than 0): ")
-                                if mtime is not None and float(mtime) > 0:
-                                    args.max_time = mtime
-                                    break
-                                else:
-                                    print("Invalid entry for max search time") #search Time invalid                                    
+                                try:
+                                    float(mtime)
+                                    if mtime is not None and float(mtime) > 0:
+                                        args.max_time = mtime
+                                        break
+                                    else:
+                                        print("Invalid entry for max search time") #search Time invalid
+                                except ValueError:
+                                    print("Invalid entry for max search time") #search Time invalid
+                                    
 
                         ##FOR THE BROKER: not sure what to check for here as the url entry. kept pretty simple. 
                         ## used validators to check if entry is indeed a URL. regardless of what the URL points to
