@@ -450,6 +450,9 @@ class Game:
 
         self.mod_health(coords.dst, repair_to_dst)
 
+    def is_repair_zero(self, src_unit: Unit, dst_unit: Unit) -> bool:
+        return src_unit.repair_amount(dst_unit) <= 0
+
     # Unit is engaged in combat if there is at least 1 enemy unit adjacent
     def is_engaged_in_combat(self, src : Coord) -> bool:
         if self.next_player == Player.Attacker:
@@ -505,8 +508,8 @@ class Game:
         # If dst is friendly square, check if src unit is Tech (this is the repair)
         # then make sure target is not a virus or already at full health
         if dst_unit.player == self.next_player:
-            if src_unit.type == UnitType.Tech:
-                if dst_unit.type != UnitType.Virus and not dst_unit.has_full_health():
+            if src_unit.type == UnitType.Tech or src_unit.type == UnitType.AI:
+                if not self.is_repair_zero(src_unit, dst_unit) and not dst_unit.has_full_health():
                     return (True, ActionType.Repair)
             return (False, None)
 
