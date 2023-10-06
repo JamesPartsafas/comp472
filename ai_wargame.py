@@ -337,6 +337,7 @@ class Game:
     _defender_has_ai : bool = True
     file_name : str = ""
     skip_logs : bool = False
+    score : int = 0
 
     def __post_init__(self):
         """Automatically called after class init to set up the default board state."""
@@ -666,6 +667,13 @@ class Game:
             if unit is not None and unit.player == player:
                 yield (coord,unit)
 
+    def get_all_units(self) -> Iterable[Tuple[Coord,Unit]]:
+        """Iterates over all units on board, regardless of who they belong to"""
+        for coord in CoordPair.from_dim(self.options.dim).iter_rectangle():
+            unit = self.get(coord)
+            if unit is not None:
+                yield (coord,unit)
+
     def is_finished(self) -> bool:
         """Check if the game is over."""
         return self.has_winner() is not None
@@ -706,9 +714,12 @@ class Game:
         for (move, action_type) in self.move_candidates():
             child_state = self.clone()
             child_state.do_move_action(move, action_type)
+            child_state.score = child_state.calculate_heuristic()
             yield (move, child_state)
 
     def get_best_move_minimax(self) -> Tuple[int, CoordPair | None, float]:
+        """Get best move for current player using minimax"""
+        # TODO: Fill out logic of method
         return self.random_move()
 
     def random_move(self) -> Tuple[int, CoordPair | None, float]:
@@ -721,9 +732,39 @@ class Game:
             return (0, move_candidates[0], 1)
         else:
             return (0, None, 0)
+        
+    def calculate_heuristic(self) -> int:
+        """Calculates heuristic for current game state"""
+        # TODO: use actual heuristic for e1 and e2
+        if self.options.heuristic == "e0":
+            # (3VP1 + 3TP1 + 3FP1 + 3PP1 + 9999AiP1) - (3VP2 + 3TP2 + 3FP2 + 3PP2 + 9999AiP2)
+            # Where V = number of virus, T = number of tech, 
+            # F = number of firewall, P = number of program, Ai = number of AI
+            # and P1 is player 1 (attacker), P2 is player 2 (defender)
+            score = 0
+            for (_, unit) in self.get_all_units():
+                # Increment for attacker
+                if unit.player == Player.Attacker:
+                    if (unit.type == UnitType.AI):
+                        score += 9999
+                    else:
+                        score += 3 
+                # Decrement for defender
+                if unit.player == Player.Defender:
+                    if (unit.type == UnitType.AI):
+                        score -= 9999
+                    else:
+                        score -= 3 
+            return score 
 
+        if self.options.heuristic == "e1":
+            return 0
+        
+        if self.options.heuristic == "e2":
+            return 0
+        
     def suggest_move(self, output_file_data: dict[str, str]) -> CoordPair | None:
-        """Suggest the next move using minimax alpha beta. TODO: REPLACE RANDOM_MOVE WITH PROPER GAME LOGIC!!!"""
+        """Suggest the next move using minimax alpha beta."""
         start_time = datetime.now()
         (score, move, avg_depth) = self.get_best_move_minimax()
         elapsed_seconds = (datetime.now() - start_time).total_seconds()
