@@ -336,6 +336,7 @@ class Game:
     _attacker_has_ai : bool = True
     _defender_has_ai : bool = True
     file_name : str = ""
+    skip_logs : bool = False
 
     def __post_init__(self):
         """Automatically called after class init to set up the default board state."""
@@ -356,21 +357,9 @@ class Game:
         self.set(Coord(md,md-2),Unit(player=Player.Attacker,type=UnitType.Program))
         self.set(Coord(md-1,md-1),Unit(player=Player.Attacker,type=UnitType.Firewall))
 
-        output_file_data = {
-            "Section": "Game Parameters",
-            "Timeout Value (seconds)": self.options.max_time,
-            "Max Numbers of Turns": self.options.max_turns,
-            "Play Modes": GameTypeConverter.convert_game_type(self.options.game_type)
-        }
-
-        if self.options.game_type != GameType.AttackerVsDefender:
-            output_file_data["Alpha-Beta"] = "on" if self.options.alpha_beta else "off"
-            output_file_data["Heuristic"] = self.options.heuristic
-        
-        output_file_data["Initial Board"] = f"\n{self.print_board()}"
-        self.dump_to_output_file(output_file_data, append=False)
-
     def dump_to_output_file(self, output_file_data: dict[str, str], append: bool = True):
+        if (self.skip_logs):
+            return
         mode = "a" if append else "w"
         with open(self.file_name, mode) as f:
             for key, value in output_file_data.items():
@@ -381,9 +370,11 @@ class Game:
         """Make a new copy of a game for minimax recursion.
 
         Shallow copy of everything except the board (options and stats are shared).
+        skip_logs is set to true to avoid generating or modifying log files
         """
         new = copy.copy(self)
         new.board = copy.deepcopy(self.board)
+        new.skip_logs = True
         return new
 
     def is_empty(self, coord : Coord) -> bool:
@@ -521,17 +512,21 @@ class Game:
         """Validate and perform a move expressed as a CoordPair."""
         is_valid, action_type = self.is_valid_move(coords)
         if is_valid:
-            if action_type == ActionType.SelfDestruct:
-                self.perform_self_distruct(coords.src)
-            elif action_type == ActionType.Move:
-                self.set(coords.dst,self.get(coords.src))
-                self.set(coords.src,None)
-            elif action_type == ActionType.Attack:
-                self.perform_fight(coords)
-            elif action_type == ActionType.Repair:
-                self.perform_repair(coords)
+            self.do_move_action(coords, action_type)
             return (True, action_type,"")
-        return (False, None, "invalid move")        
+        return (False, None, "invalid move")
+
+    def do_move_action(self, coords : CoordPair, action_type : ActionType):
+        """Performs the action specified. Does not verify if move is valid or not."""
+        if action_type == ActionType.SelfDestruct:
+            self.perform_self_distruct(coords.src)
+        elif action_type == ActionType.Move:
+            self.set(coords.dst,self.get(coords.src))
+            self.set(coords.src,None)
+        elif action_type == ActionType.Attack:
+            self.perform_fight(coords)
+        elif action_type == ActionType.Repair:
+            self.perform_repair(coords)        
 
     def next_turn(self):
         """Transitions game to the next turn."""
@@ -693,21 +688,34 @@ class Game:
             self.dump_to_output_file({"Winner": f"Defender in {self.turns_played} turns"})
             return Player.Defender # Undefined behaviour when both AIs are dead. Award win to defender.
 
-    def move_candidates(self) -> Iterable[CoordPair]:
+    def move_candidates(self) -> Iterable[CoordPair, ActionType]:
         """Generate valid move candidates for the next player."""
         move = CoordPair()
         for (src,_) in self.player_units(self.next_player):
             move.src = src
             for dst in src.iter_adjacent():
                 move.dst = dst
-                if self.is_valid_move(move):
-                    yield move.clone()
+                is_valid, action_type = self.is_valid_move(move)
+                if is_valid:
+                    yield (move.clone(), action_type)
             move.dst = src
-            yield move.clone()
+            yield (move.clone(), ActionType.SelfDestruct)
+
+    def get_child_states(self) -> Iterable[CoordPair, Game]:
+        """Given a current game state, generates all possible immediate child game states"""
+        for (move, action_type) in self.move_candidates():
+            child_state = self.clone()
+            child_state.do_move_action(move, action_type)
+            yield (move, child_state)
+
+    def get_best_move_minimax(self) -> Tuple[int, CoordPair | None, float]:
+        return self.random_move()
 
     def random_move(self) -> Tuple[int, CoordPair | None, float]:
         """Returns a random move."""
-        move_candidates = list(self.move_candidates())
+        move_candidates = list()
+        for (move, _) in self.move_candidates():
+            move_candidates.append(move)
         random.shuffle(move_candidates)
         if len(move_candidates) > 0:
             return (0, move_candidates[0], 1)
@@ -717,8 +725,13 @@ class Game:
     def suggest_move(self, output_file_data: dict[str, str]) -> CoordPair | None:
         """Suggest the next move using minimax alpha beta. TODO: REPLACE RANDOM_MOVE WITH PROPER GAME LOGIC!!!"""
         start_time = datetime.now()
-        (score, move, avg_depth) = self.random_move()
+        (score, move, avg_depth) = self.get_best_move_minimax()
         elapsed_seconds = (datetime.now() - start_time).total_seconds()
+        
+        # Check if AI took too long
+        if elapsed_seconds > float(self.options.max_time):
+            raise RuntimeError
+
         self.stats.total_seconds += elapsed_seconds
         print(f"Heuristic score: {score}")
         print(f"Average recursive depth: {avg_depth:0.1f}")
@@ -920,6 +933,21 @@ def main():
     # create a new game
     game = Game(options=options)
 
+    # Create log file
+    output_file_data = {
+        "Section": "Game Parameters",
+        "Timeout Value (seconds)": game.options.max_time,
+        "Max Numbers of Turns": game.options.max_turns,
+        "Play Modes": GameTypeConverter.convert_game_type(game.options.game_type)
+    }
+
+    if game.options.game_type != GameType.AttackerVsDefender:
+        output_file_data["Alpha-Beta"] = "on" if game.options.alpha_beta else "off"
+        output_file_data["Heuristic"] = game.options.heuristic
+    
+    output_file_data["Initial Board"] = f"\n{game.print_board()}"
+    game.dump_to_output_file(output_file_data, append=False)
+
     # the main game loop
     while True:
         print()
@@ -936,12 +964,18 @@ def main():
             game.human_turn()
         else:
             player = game.next_player
-            move = game.computer_turn()
-            if move is not None:
-                game.post_move_to_broker(move)
-            else:
-                print("Computer doesn't know what to do!!!")
-                exit(1)
+            try:
+                move = game.computer_turn()
+                if move is not None:
+                    game.post_move_to_broker(move)
+                else:
+                    print("Computer doesn't know what to do!!!")
+                    exit(1)
+            except RuntimeError:
+                print(f"The computer {player.name} took too long to choose a move!")
+                game.next_turn()
+                print(f"{game.next_player.name} wins!")
+                break
 
 ##############################################################################################################
 
