@@ -4,7 +4,7 @@ import copy
 from datetime import datetime
 from enum import Enum
 from dataclasses import dataclass, field
-from time import sleep
+from time import time
 from typing import Tuple, TypeVar, Type, Iterable, ClassVar
 import random
 import requests
@@ -337,7 +337,6 @@ class Game:
     _defender_has_ai : bool = True
     file_name : str = ""
     skip_logs : bool = False
-    score : int = 0
 
     def __post_init__(self):
         """Automatically called after class init to set up the default board state."""
@@ -541,8 +540,10 @@ class Game:
             return f"Attack by {coords.src} to {coords.dst}"
         elif action_type is ActionType.Repair:
             return f"Repair by {coords.src} to {coords.dst}"
-        else:
+        elif action_type is ActionType.SelfDestruct:
             return f"Self Destruct at {coords.src}"
+        else:
+            return f"Invalid move. src: {coords.src} - dist: {coords.dst}"
 
     def print_board(self) -> str:
         dim = self.options.dim
@@ -617,6 +618,15 @@ class Game:
                         self.dump_to_output_file(output_file_data)
                         self.next_turn()
                         break
+                    else:
+                        output_file_data = {
+                            "Player Name": f"Broker {self.next_player.name}",
+                            "Turn Number": self.turns_played + 1,
+                            "Action Taken": self.generate_action_description(mv, action_type),
+                            "Current Board": f"\n{self.print_board()}"
+                        }
+
+                        self.dump_to_output_file(output_file_data)
                 sleep(0.1)
         else:
             while True:
@@ -637,6 +647,14 @@ class Game:
                     self.next_turn()
                     break
                 else:
+                    output_file_data = {
+                        "Player Name": self.next_player.name,
+                        "Turn Number": self.turns_played + 1,
+                        "Action Taken": self.generate_action_description(mv, action_type),
+                        "Current Board": f"\n{self.print_board()}"
+                    }
+
+                    self.dump_to_output_file(output_file_data)
                     print("The move is not valid! Try again.")
 
     def computer_turn(self) -> CoordPair | None:
@@ -658,6 +676,11 @@ class Game:
 
                 self.dump_to_output_file(output_file_data)
                 self.next_turn()
+            else:
+                output_file_data["Action Taken"] = self.generate_action_description(mv, action_type)
+                output_file_data["Current Board"] = f"\n{self.print_board()}"
+
+                self.dump_to_output_file(output_file_data)
         return mv
 
     def player_units(self, player: Player) -> Iterable[Tuple[Coord,Unit]]:
@@ -694,7 +717,7 @@ class Game:
             return Player.Defender
         else:
             self.dump_to_output_file({"Winner": f"Defender in {self.turns_played} turns"})
-            return Player.Defender # Undefined behaviour when both AIs are dead. Award win to defender.
+            return Player.Defender
 
     def move_candidates(self) -> Iterable[CoordPair, ActionType]:
         """Generate valid move candidates for the next player."""
@@ -714,13 +737,62 @@ class Game:
         for (move, action_type) in self.move_candidates():
             child_state = self.clone()
             child_state.do_move_action(move, action_type)
-            child_state.score = child_state.calculate_heuristic()
+            # child_state.score = child_state.calculate_heuristic() # No need to waste time calculating the score for all the states
             yield (move, child_state)
 
-    def get_best_move_minimax(self) -> Tuple[int, CoordPair | None, float]:
+    def get_best_move_minimax(self) -> Tuple[int, CoordPair | None, float, float]:
         """Get best move for current player using minimax"""
-        # TODO: Fill out logic of method
-        return self.random_move()
+        start_time = time()
+        buffer_time = 0.2
+
+        def search(state: Game, currentDepth: int, maxDepth: int, maximizingPlayer: bool) -> Tuple[int, CoordPair | None]:
+            nonlocal nodes_explored, total_depth, num_non_leaf_nodes
+            if (currentDepth - self.turns_played) == maxDepth or (time() - start_time + buffer_time > self.options.max_time) or state.is_finished():
+                score = state.calculate_heuristic()
+                num_non_leaf_nodes -= 1
+                return (score, None)
+            
+            if maximizingPlayer:
+                value = float('-inf')
+                best_move = None
+                for (mv, child_state) in state.get_child_states():
+                    child_state.next_turn()
+                    child_value, _ = search(child_state, currentDepth + 1, maxDepth, False)
+                    nodes_explored += 1
+                    num_non_leaf_nodes += 1
+                    total_depth += (currentDepth - self.turns_played + 1)
+                    state.stats.evaluations_per_depth[currentDepth + 1] = state.stats.evaluations_per_depth.setdefault(currentDepth + 1, 0) + 1
+                    if child_value > value:
+                        value = child_value
+                        best_move = mv
+                return (value, best_move)
+            else:
+                value = float('inf')
+                best_move = None
+                for (mv, child_state) in state.get_child_states():
+                    child_state.next_turn()
+                    child_value, _ = search(child_state, currentDepth + 1, maxDepth, True)
+                    nodes_explored += 1
+                    num_non_leaf_nodes += 1
+                    total_depth += (currentDepth - self.turns_played + 1)
+                    state.stats.evaluations_per_depth[currentDepth + 1] = state.stats.evaluations_per_depth.setdefault(currentDepth + 1, 0) + 1
+                    if child_value < value:
+                        value = child_value
+                        best_move = mv
+                return (value, best_move)
+        
+        max_depth = 1
+        best_move = None
+        maximize = self.next_player == Player.Attacker
+        while (time() - start_time + buffer_time < self.options.max_time) and max_depth <= self.options.max_depth:
+            total_depth = 0
+            nodes_explored = 1
+            num_non_leaf_nodes = 0
+            score, best_move = search(self, self.turns_played, max_depth, maximize)
+            average_depth = total_depth / nodes_explored
+            average_branching_factor = (nodes_explored - 1) / num_non_leaf_nodes if num_non_leaf_nodes != 0 else 0
+            max_depth += 1
+        return (score, best_move, average_depth, average_branching_factor)
 
     def random_move(self) -> Tuple[int, CoordPair | None, float]:
         """Returns a random move."""
@@ -766,7 +838,7 @@ class Game:
     def suggest_move(self, output_file_data: dict[str, str]) -> CoordPair | None:
         """Suggest the next move using minimax alpha beta."""
         start_time = datetime.now()
-        (score, move, avg_depth) = self.get_best_move_minimax()
+        (score, move, avg_depth, avg_branching_factor) = self.get_best_move_minimax()
         elapsed_seconds = (datetime.now() - start_time).total_seconds()
         
         # Check if AI took too long
@@ -785,12 +857,12 @@ class Game:
             print(f"Eval perf.: {total_evals/self.stats.total_seconds/1000:0.1f}k/s")
         print(f"Elapsed time: {elapsed_seconds:0.1f}s")
 
-        output_file_data["Time this action (seconds)"] = f"{elapsed_seconds:0.1f}"
+        output_file_data["Duration of action (seconds)"] = f"{elapsed_seconds:0.1f}"
         output_file_data["Heuristic score"] = score
-        output_file_data["Cumulative evals"] = "undefined"
-        output_file_data["Cumulative evals by depth"] = "undefined"
-        output_file_data["Cumulative % evals by depth"] = "undefined"
-        output_file_data["Average Branching factor"] = "undefined"
+        output_file_data["Cumulative evals"] = sum(self.stats.evaluations_per_depth.values())
+        output_file_data["Cumulative evals by depth"] = "".join([f"{k}:{self.stats.evaluations_per_depth[k]} " for k in sorted(self.stats.evaluations_per_depth.keys())])
+        output_file_data["Cumulative % evals by depth"] = "".join([f"{k}:{round(self.stats.evaluations_per_depth[k] * 100/total_evals, 2)}% " for k in sorted(self.stats.evaluations_per_depth.keys())])
+        output_file_data["Average Branching factor"] = f"{avg_branching_factor:0.1f}"
 
         return move
 
@@ -903,7 +975,7 @@ def main():
                             while True :
                                 mdepth = input("Please enter the max search depth for the Computer opponent (positive Integer greater than 1): ") 
                                 if mdepth is not None and mdepth.isnumeric() and int(mdepth) > 1:
-                                    args.max_depth = mdepth
+                                    args.max_depth = int(mdepth)
                                     break
                                 else:
                                     print("Invalid entry for max search depth") #search Depth invalid
@@ -914,7 +986,7 @@ def main():
                                 try:
                                     float(mtime)
                                     if mtime is not None and float(mtime) > 0:
-                                        args.max_time = mtime
+                                        args.max_time = float(mtime)
                                         break
                                     else:
                                         print("Invalid entry for max search time") #search Time invalid
