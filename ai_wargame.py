@@ -747,7 +747,7 @@ class Game:
 
         def search(state: Game, currentDepth: int, maxDepth: int, maximizingPlayer: bool) -> Tuple[int, CoordPair | None]:
             nonlocal nodes_explored, total_depth, num_non_leaf_nodes
-            if currentDepth == maxDepth or (time() - start_time + buffer_time > self.options.max_time) or state.is_finished():
+            if (currentDepth - self.turns_played) == maxDepth or (time() - start_time + buffer_time > self.options.max_time) or state.is_finished():
                 score = state.calculate_heuristic()
                 num_non_leaf_nodes -= 1
                 return (score, None)
@@ -760,7 +760,7 @@ class Game:
                     child_value, _ = search(child_state, currentDepth + 1, maxDepth, False)
                     nodes_explored += 1
                     num_non_leaf_nodes += 1
-                    total_depth += (currentDepth + 1)
+                    total_depth += (currentDepth - self.turns_played + 1)
                     state.stats.evaluations_per_depth[currentDepth + 1] = state.stats.evaluations_per_depth.setdefault(currentDepth + 1, 0) + 1
                     if child_value > value:
                         value = child_value
@@ -774,7 +774,7 @@ class Game:
                     child_value, _ = search(child_state, currentDepth + 1, maxDepth, True)
                     nodes_explored += 1
                     num_non_leaf_nodes += 1
-                    total_depth += (currentDepth + 1)
+                    total_depth += (currentDepth - self.turns_played + 1)
                     state.stats.evaluations_per_depth[currentDepth + 1] = state.stats.evaluations_per_depth.setdefault(currentDepth + 1, 0) + 1
                     if child_value < value:
                         value = child_value
@@ -788,7 +788,7 @@ class Game:
             total_depth = 0
             nodes_explored = 1
             num_non_leaf_nodes = 0
-            score, best_move = search(self, 0, max_depth, maximize)
+            score, best_move = search(self, self.turns_played, max_depth, maximize)
             average_depth = total_depth / nodes_explored
             average_branching_factor = (nodes_explored - 1) / num_non_leaf_nodes if num_non_leaf_nodes != 0 else 0
             max_depth += 1
@@ -860,8 +860,8 @@ class Game:
         output_file_data["Duration of action (seconds)"] = f"{elapsed_seconds:0.1f}"
         output_file_data["Heuristic score"] = score
         output_file_data["Cumulative evals"] = sum(self.stats.evaluations_per_depth.values())
-        output_file_data["Cumulative evals by depth"] = "".join([f"{k}:{self.stats.evaluations_per_depth[k]} " for k in self.stats.evaluations_per_depth.keys()])
-        output_file_data["Cumulative % evals by depth"] = "".join([f"{k}:{round(self.stats.evaluations_per_depth[k] * 100/total_evals, 2)}% " for k in self.stats.evaluations_per_depth.keys()])
+        output_file_data["Cumulative evals by depth"] = "".join([f"{k}:{self.stats.evaluations_per_depth[k]} " for k in sorted(self.stats.evaluations_per_depth.keys())])
+        output_file_data["Cumulative % evals by depth"] = "".join([f"{k}:{round(self.stats.evaluations_per_depth[k] * 100/total_evals, 2)}% " for k in sorted(self.stats.evaluations_per_depth.keys())])
         output_file_data["Average Branching factor"] = f"{avg_branching_factor:0.1f}"
 
         return move
@@ -975,7 +975,7 @@ def main():
                             while True :
                                 mdepth = input("Please enter the max search depth for the Computer opponent (positive Integer greater than 1): ") 
                                 if mdepth is not None and mdepth.isnumeric() and int(mdepth) > 1:
-                                    args.max_depth = mdepth
+                                    args.max_depth = int(mdepth)
                                     break
                                 else:
                                     print("Invalid entry for max search depth") #search Depth invalid
@@ -986,7 +986,7 @@ def main():
                                 try:
                                     float(mtime)
                                     if mtime is not None and float(mtime) > 0:
-                                        args.max_time = mtime
+                                        args.max_time = float(mtime)
                                         break
                                     else:
                                         print("Invalid entry for max search time") #search Time invalid
