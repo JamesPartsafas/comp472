@@ -745,6 +745,38 @@ class Game:
         start_time = time()
         buffer_time = 0.2
 
+
+        def alpha_beta_search(max_player: bool, curDepth: int, maxDepth: int, node:Game, alphaVal: int, betaVal: int ) -> Tuple[int, CoordPair | None]:
+            if (curDepth - self.turns_played) == node.options.max_depth or (time() - start_time + buffer_time > self.options.max_time) or node.is_finished():
+                hScore = node.calculate_heuristic
+                return (hScore,None)
+            if max_player:
+                bestValue = float('-inf')
+                for (move, child_state) in node.get_child_states():
+                    child_state.next_turn()
+                    child_value, _ = alpha_beta_search(False, curDepth + 1, maxDepth, child_state,alphaVal,betaVal)
+                    if bestValue < child_value:
+                        bestValue = child_value
+                        bestMove= move
+                    alphaVal = max(bestValue, alphaVal)
+                    if betaVal <= alphaVal:
+                        break
+                return (bestValue, bestMove)
+            else:
+                bestValue = float('inf')
+                for (move, child_state) in node.get_child_states():
+                    child_state.next_turn()
+                    child_value, _ = alpha_beta_search(True, curDepth + 1, maxDepth, child_state,alphaVal,betaVal)
+                    if bestValue > child_value:
+                        bestValue = child_value
+                        bestMove = move
+                    betaVal = min(bestValue, betaVal)
+                    if betaVal <= alphaVal:
+                        break
+                return (bestValue, bestMove)
+
+                
+
         def search(state: Game, currentDepth: int, maxDepth: int, maximizingPlayer: bool) -> Tuple[int, CoordPair | None]:
             nonlocal nodes_explored, total_depth, num_non_leaf_nodes
             if (currentDepth - self.turns_played) == maxDepth or (time() - start_time + buffer_time > self.options.max_time) or state.is_finished():
@@ -788,7 +820,7 @@ class Game:
             total_depth = 0
             nodes_explored = 1
             num_non_leaf_nodes = 0
-            score, best_move = search(self, self.turns_played, max_depth, maximize)
+            score, best_move = search(self, self.turns_played, max_depth, maximize) if not(self.options.alpha_beta) else alpha_beta_search(maximize, self.turns_played, max_depth, self, MAX_HEURISTIC_SCORE, MIN_HEURISTIC_SCORE)
             average_depth = total_depth / nodes_explored
             average_branching_factor = (nodes_explored - 1) / num_non_leaf_nodes if num_non_leaf_nodes != 0 else 0
             max_depth += 1
