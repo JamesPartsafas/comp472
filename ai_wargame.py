@@ -865,7 +865,32 @@ class Game:
             return 0
         
         if self.options.heuristic == "e2":
-            return 0
+            score = 0
+            for (_, unit) in self.get_all_units():
+                # Increment for attacker
+                if unit.player == Player.Attacker:
+                    if (unit.type == UnitType.AI):
+                        score += 9999
+                    else:
+                        score += 3 
+                    #subtraction here as the less health your AI has the more likely you are to lose 
+                    if unit.type == UnitType.AI and unit.health < 9:
+                        score -= (1000*(9-unit.health))
+                    elif unit.type == UnitType.Virus and unit.health < 9:
+                        score -= (3*(9-unit.health))
+                
+                # Decrement for defender
+                if unit.player == Player.Defender:
+                    if (unit.type == UnitType.AI):
+                        score -= 9999
+                    else:
+                        score -= 3
+                    #addition here as the less health your AI has the more likely you are to lose 
+                    if unit.type == UnitType.AI and unit.health < 9:
+                        score += (1000*(9-unit.health))
+                    elif (unit.type == UnitType.Tech or unit.type == UnitType.Virus) and unit.health < 9:
+                        score += (3*(9-unit.health))
+            return score 
         
     def suggest_move(self, output_file_data: dict[str, str]) -> CoordPair | None:
         """Suggest the next move using minimax alpha beta."""
