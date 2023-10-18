@@ -820,7 +820,7 @@ class Game:
             total_depth = 0
             nodes_explored = 1
             num_non_leaf_nodes = 0
-            score, best_move = search(self, self.turns_played, max_depth, maximize) if not(self.options.alpha_beta) else alpha_beta_search(maximize, self.turns_played, max_depth, self, MAX_HEURISTIC_SCORE, MIN_HEURISTIC_SCORE)
+            score, best_move = search(self, self.turns_played, max_depth, maximize) if not(self.options.alpha_beta) else alpha_beta_search(maximize, self.turns_played, max_depth, self, MIN_HEURISTIC_SCORE, MAX_HEURISTIC_SCORE)
             average_depth = total_depth / nodes_explored
             average_branching_factor = (nodes_explored - 1) / num_non_leaf_nodes if num_non_leaf_nodes != 0 else 0
             max_depth += 1
