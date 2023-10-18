@@ -869,27 +869,23 @@ class Game:
             for (_, unit) in self.get_all_units():
                 # Increment for attacker
                 if unit.player == Player.Attacker:
-                    if (unit.type == UnitType.AI):
-                        score += 9999
+
+                    if unit.type == UnitType.AI:
+                        score += (1000*(unit.health))
+                    elif unit.type == UnitType.Virus:
+                        score += (30*(unit.health))
                     else:
-                        score += 3 
-                    #subtraction here as the less health your AI has the more likely you are to lose 
-                    if unit.type == UnitType.AI and unit.health < 9:
-                        score -= (1000*(9-unit.health))
-                    elif unit.type == UnitType.Virus and unit.health < 9:
-                        score -= (3*(9-unit.health))
+                        score += 10*unit.health
                 
                 # Decrement for defender
                 if unit.player == Player.Defender:
-                    if (unit.type == UnitType.AI):
-                        score -= 9999
+                    
+                    if unit.type == UnitType.AI:
+                        score -= (1000*(unit.health))
+                    elif unit.type == UnitType.Tech:
+                        score -= (30*(unit.health))
                     else:
-                        score -= 3
-                    #addition here as the less health your AI has the more likely you are to lose 
-                    if unit.type == UnitType.AI and unit.health < 9:
-                        score += (1000*(9-unit.health))
-                    elif (unit.type == UnitType.Tech or unit.type == UnitType.Virus) and unit.health < 9:
-                        score += (3*(9-unit.health))
+                        score -= 10*unit.health
             return score 
         
     def suggest_move(self, output_file_data: dict[str, str]) -> CoordPair | None:
