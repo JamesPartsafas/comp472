@@ -749,7 +749,7 @@ class Game:
         def alpha_beta_search(max_player: bool, curDepth: int, maxDepth: int, node:Game, alphaVal: int, betaVal: int ) -> Tuple[int, CoordPair | None]:
             nonlocal nodes_explored, total_depth, num_non_leaf_nodes
             if (curDepth - self.turns_played) == node.options.max_depth or (time() - start_time + buffer_time > self.options.max_time) or node.is_finished():
-                hScore = node.calculate_heuristic
+                hScore = node.calculate_heuristic()
                 num_non_leaf_nodes -= 1
                 return (hScore,None)
             
