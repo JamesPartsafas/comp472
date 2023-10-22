@@ -745,6 +745,50 @@ class Game:
         start_time = time()
         buffer_time = 0.2
 
+
+        def alpha_beta_search(max_player: bool, curDepth: int, maxDepth: int, node:Game, alphaVal: int, betaVal: int ) -> Tuple[int, CoordPair | None]:
+            nonlocal nodes_explored, total_depth, num_non_leaf_nodes
+            if (curDepth - self.turns_played) == node.options.max_depth or (time() - start_time + buffer_time > self.options.max_time) or node.is_finished():
+                hScore = node.calculate_heuristic()
+                num_non_leaf_nodes -= 1
+                return (hScore,None)
+            
+            if max_player:
+                bestValue = float('-inf')
+                for (move, child_state) in node.get_child_states():
+                    child_state.next_turn()
+                    child_value, _ = alpha_beta_search(False, curDepth + 1, maxDepth, child_state,alphaVal,betaVal)
+                    nodes_explored += 1
+                    num_non_leaf_nodes += 1
+                    total_depth += (curDepth - self.turns_played + 1)
+                    node.stats.evaluations_per_depth[curDepth + 1] = node.stats.evaluations_per_depth.setdefault(curDepth + 1, 0) + 1
+                    if bestValue < child_value:
+                        bestValue = child_value
+                        bestMove= move
+                    alphaVal = max(bestValue, alphaVal)
+                    if betaVal <= alphaVal:
+                        break
+                return (bestValue, bestMove)
+            
+            else:
+                bestValue = float('inf')
+                for (move, child_state) in node.get_child_states():
+                    child_state.next_turn()
+                    child_value, _ = alpha_beta_search(True, curDepth + 1, maxDepth, child_state,alphaVal,betaVal)
+                    nodes_explored += 1
+                    num_non_leaf_nodes += 1
+                    total_depth += (curDepth - self.turns_played + 1)
+                    node.stats.evaluations_per_depth[curDepth + 1] = node.stats.evaluations_per_depth.setdefault(curDepth + 1, 0) + 1
+                    if bestValue > child_value:
+                        bestValue = child_value
+                        bestMove = move
+                    betaVal = min(bestValue, betaVal)
+                    if betaVal <= alphaVal:
+                        break
+                return (bestValue, bestMove)
+
+                
+
         def search(state: Game, currentDepth: int, maxDepth: int, maximizingPlayer: bool) -> Tuple[int, CoordPair | None]:
             nonlocal nodes_explored, total_depth, num_non_leaf_nodes
             if (currentDepth - self.turns_played) == maxDepth or (time() - start_time + buffer_time > self.options.max_time) or state.is_finished():
@@ -788,7 +832,7 @@ class Game:
             total_depth = 0
             nodes_explored = 1
             num_non_leaf_nodes = 0
-            score, best_move = search(self, self.turns_played, max_depth, maximize)
+            score, best_move = search(self, self.turns_played, max_depth, maximize) if not(self.options.alpha_beta) else alpha_beta_search(maximize, self.turns_played, max_depth, self, float('-inf'), float('inf'))
             average_depth = total_depth / nodes_explored
             average_branching_factor = (nodes_explored - 1) / num_non_leaf_nodes if num_non_leaf_nodes != 0 else 0
             max_depth += 1
@@ -833,7 +877,28 @@ class Game:
             return 0
         
         if self.options.heuristic == "e2":
-            return 0
+            score = 0
+            for (_, unit) in self.get_all_units():
+                # Increment for attacker
+                if unit.player == Player.Attacker:
+
+                    if unit.type == UnitType.AI:  
+                        score += (1000*(unit.health))
+                    elif unit.type == UnitType.Virus:
+                        score += (30*(unit.health))
+                    else:
+                        score += 10*unit.health
+                
+                # Decrement for defender
+                if unit.player == Player.Defender:
+                    
+                    if unit.type == UnitType.AI:
+                        score -= (1000*(unit.health))
+                    elif unit.type == UnitType.Tech:
+                        score -= (30*(unit.health))
+                    else:
+                        score -= 10*unit.health
+            return score 
         
     def suggest_move(self, output_file_data: dict[str, str]) -> CoordPair | None:
         """Suggest the next move using minimax alpha beta."""
@@ -930,91 +995,6 @@ def main():
     parser.add_argument('--alpha_beta', default=True, type=lambda x: (str(x).lower() == 'true'), help='Use alpha beta: True|False')
     parser.add_argument('--max_turns', type=int, default="100", help='Max number of turns')
     args = parser.parse_args()
-
-
-
-    #Intro to AI Wargame
-    print("Welcome to the AI Wargame!")
-    
-    while True:
-        #Check to see if user would like default settings for the game or customize their own settings
-        rules = input("Would you like to use the default or custom settings for the game setup? (d|c): ")
-        if rules is not None and (rules == 'c' or rules == 'd') :
-
-            #default rules have been chosen, will create the game with all default values
-            if rules == 'd':
-                print("\nWe will setup the game with default settings! GLHF!")
-                break    
-
-            #custom rules have been chosen, user will chose their values
-            elif rules == 'c':
-                print("Custom rules!")
-                
-                #choosing game type
-                while True:
-                    gtype = input("Please enter the game type (auto|attacker|defender|manual): ")
-                    if gtype is not None and (gtype == 'auto' or gtype == 'attacker' or gtype == 'defender' or gtype == 'manual' ):
-
-                        #after check if game type is of proper format. it is parsed using the argument parser and stored
-                        args.game_type = gtype
-
-                        #max number of turns
-                        while True:
-                            maxTurn = input("Please input the max number of turns you would like the game to run (postive integer):")
-                            if maxTurn is not None and maxTurn.isnumeric() and int(maxTurn)>0:
-                                args.max_turns = int(maxTurn)
-                                break
-                            else:
-                                print("Invalid value for number of turns entered.")                            
-                        
-                        
-                        #if there are AI in the game (any game type other than manual)
-                        if gtype != 'manual':
-                            
-                            #choosing max Depth for AI
-                            while True :
-                                mdepth = input("Please enter the max search depth for the Computer opponent (positive Integer greater than 1): ") 
-                                if mdepth is not None and mdepth.isnumeric() and int(mdepth) > 1:
-                                    args.max_depth = int(mdepth)
-                                    break
-                                else:
-                                    print("Invalid entry for max search depth") #search Depth invalid
-                            
-                            #choosing max search Time for AI
-                            while True :
-                                mtime = input("Please enter the max time allowed for AI to search for next move (Positive number greater than 0): ")
-                                try:
-                                    float(mtime)
-                                    if mtime is not None and float(mtime) > 0:
-                                        args.max_time = float(mtime)
-                                        break
-                                    else:
-                                        print("Invalid entry for max search time") #search Time invalid
-                                except ValueError:
-                                    print("Invalid entry for max search time") #search Time invalid
-                                    
-
-                        ##FOR THE BROKER: not sure what to check for here as the url entry. kept pretty simple. 
-                        ## used validators to check if entry is indeed a URL. regardless of what the URL points to
-
-                        #choosing broker URL
-                        while True :
-                            broker = input("Please enter the broker URL, or enter null for no broker: ")
-                            if broker is not None:
-                                if broker == "null":
-                                    args.broker = None
-                                    break
-                                if validators.url(broker):
-                                    args.broker = broker
-                                    break
-                            else:
-                                print("This is an invalid URL for the broker.")
-                        break
-                    else :
-                        print("Invalid entry for Game Type. Please try again.") #game type invalid.
-            break
-        else :
-            print("Invalid entry for game setup please try again.") #default or custom settings choice is invalid.
 
     # parse the game type
     if args.game_type == "attacker":
