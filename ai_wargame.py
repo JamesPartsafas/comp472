@@ -4,7 +4,7 @@ import copy
 from datetime import datetime
 from enum import Enum
 from dataclasses import dataclass, field
-from time import time
+from time import sleep, time
 from typing import Tuple, TypeVar, Type, Iterable, ClassVar
 import random
 import requests
@@ -219,6 +219,10 @@ class Coord:
             return coord
         else:
             return None
+
+    @classmethod
+    def manhattan_distance(cls, coord1 : Coord, coord2 : Coord) -> int:
+        return abs(coord1.row - coord2.row) + abs(coord1.col - coord2.col)
 
 ##############################################################################################################
 
@@ -851,7 +855,6 @@ class Game:
         
     def calculate_heuristic(self) -> int:
         """Calculates heuristic for current game state"""
-        # TODO: use actual heuristic for e1 and e2
         if self.options.heuristic == "e0":
             # (3VP1 + 3TP1 + 3FP1 + 3PP1 + 9999AiP1) - (3VP2 + 3TP2 + 3FP2 + 3PP2 + 9999AiP2)
             # Where V = number of virus, T = number of tech, 
@@ -874,7 +877,44 @@ class Game:
             return score 
 
         if self.options.heuristic == "e1":
-            return 0
+            score = 0
+            units = list(self.get_all_units())
+            attackerAI = next((u for u in units if u[1].player == Player.Attacker and u[1].type == UnitType.AI), None)
+            defenderAI = next((u for u in units if u[1].player == Player.Defender and u[1].type == UnitType.AI), None)
+
+            if (attackerAI is None or not attackerAI[1].is_alive):
+                return MIN_HEURISTIC_SCORE
+            elif (defenderAI is None or not defenderAI[1].is_alive):
+                return MAX_HEURISTIC_SCORE
+
+            for (coord, unit) in units:
+                if unit.player == Player.Attacker:
+                    if (unit.type == UnitType.AI):
+                        score += (1000* unit.health)
+                    elif (unit.type == UnitType.Virus):
+                        distance_from_AI = Coord.manhattan_distance(coord, defenderAI[0])
+                        score += int(750 * unit.health * (1/distance_from_AI))
+                    elif (unit.type == UnitType.Firewall):
+                        distance_from_AI = Coord.manhattan_distance(coord, attackerAI[0])
+                        score += int(500 * unit.health * (1/distance_from_AI))
+                    else:
+                        distance_from_AI = Coord.manhattan_distance(coord, defenderAI[0])
+                        score += int(200 * unit.health * (1/distance_from_AI))
+
+                if unit.player == Player.Defender:
+                    if (unit.type == UnitType.AI):
+                        score -= (1000* unit.health)
+                    elif (unit.type == UnitType.Tech):
+                        distance_from_AI = Coord.manhattan_distance(coord, defenderAI[0])
+                        score -= int(750 * unit.health * (1/distance_from_AI))
+                    elif (unit.type == UnitType.Firewall):
+                        distance_from_AI = Coord.manhattan_distance(coord, defenderAI[0])
+                        score -= int(500 * unit.health * (1/distance_from_AI))
+                    else:
+                        distance_from_AI = Coord.manhattan_distance(coord, defenderAI[0])
+                        score -= int(200 * unit.health * (1/distance_from_AI))
+
+            return score
         
         if self.options.heuristic == "e2":
             score = 0
